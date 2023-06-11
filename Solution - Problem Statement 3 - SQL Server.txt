@@ -1,0 +1,211 @@
+
+/*
+
+Problem Statement 3.1:  Some complaints have been lodged by patients that they have been prescribed hospital-exclusive 
+medicine that they can’t find elsewhere and facing problems due to that. Joshua, from the pharmacy management, wants to 
+get a report of which pharmacies have prescribed hospital-exclusive medicines the most in the years 2021 and 2022. Assist 
+Joshua to generate the report so that the pharmacies who prescribe hospital-exclusive medicine more often are advised to avoid 
+such practice if possible. 
+
+*/
+
+
+
+with cte as
+(
+select p.pharmacyID,ph.pharmacyName, hospitalExclusive, t.treatmentID, t.date
+from 
+[dbo].[Medicine] m
+join
+[dbo].[contain] c
+on m.medicineID = c.medicineID
+join
+[dbo].[Prescription] p
+on p.prescriptionID = c.prescriptionID
+join
+[dbo].[Treatment] t
+on p.treatmentID = t.treatmentID
+join 
+[dbo].[Pharmacy] ph
+on p.pharmacyID = ph.pharmacyID
+where year(date) in ('2021', '2022')
+)
+select pharmacyID,pharmacyName, count(hospitalExclusive)as hosexc from
+cte
+where hospitalExclusive = 'S'
+group by pharmacyID, pharmacyName
+order by hosexc desc
+
+-----------
+
+---Let's get the year wise 
+
+with cte as
+(
+select p.pharmacyID,ph.pharmacyName, hospitalExclusive, t.treatmentID,  year(t.date) years
+from 
+[dbo].[Medicine] m
+join
+[dbo].[contain] c
+on m.medicineID = c.medicineID
+join
+[dbo].[Prescription] p
+on p.prescriptionID = c.prescriptionID
+join
+[dbo].[Treatment] t
+on p.treatmentID = t.treatmentID
+join 
+[dbo].[Pharmacy] ph
+on p.pharmacyID = ph.pharmacyID
+where year(date) in ('2021', '2022')
+), cte2 as 
+(
+select pharmacyName,years, count(hospitalExclusive) hosexc
+from
+cte
+where hospitalExclusive = 'S'
+group by pharmacyName,years
+)
+
+select top 3 * from
+(
+select pharmacyName,years,hosexc, dense_rank() over(partition by years order by hosexc desc) ranks from cte2
+) p
+
+/*
+Problem Statement 3.2: Insurance companies want to assess the performance of their insurance plans.
+Generate a report that shows each insurance plan, the company that issues the plan, and the number of treatments the 
+plan was claimed for.
+
+
+*/
+
+
+
+with cte as
+(
+select planName, companyName, t.claimID
+from 
+[dbo].[InsurancePlan] i
+join
+[dbo].[InsuranceCompany] ic
+on i.companyID = ic.companyID
+join
+[dbo].[Claim] c
+on c.uin = i.uin
+join
+[dbo].[Treatment] as t
+on c.claimID = t.claimID
+)
+
+
+select planName, companyName, count(claimID) as claims
+from cte
+group by planName, companyName
+
+
+
+/*
+Problem Statement 3.3: 
+Insurance companies want to assess the performance of their insurance plans. Generate a report that shows each 
+insurance company's name with their most and least claimed insurance plans.
+*/
+
+
+with cte as
+(
+select companyName,planName, count(planName) as counts
+from
+(
+select companyName, planName
+from 
+[dbo].[InsurancePlan] i
+join
+[dbo].[InsuranceCompany] ic
+on i.companyID = ic.companyID
+join
+[dbo].[Claim] c
+on c.uin = i.uin
+join
+[dbo].[Treatment] as t
+on c.claimID = t.claimID
+) s
+group by companyName,planName
+) 
+	select distinct companyName,most,least
+	from
+	(
+	select *, 
+		first_value(planName) over(partition by companyName order by counts desc) as most,
+		last_value(planName) over(partition by companyName order by counts desc
+		rows between unbounded preceding and unbounded following) as least 
+	    from cte) p 
+
+
+/*
+
+Problem Statement 3.4:
+
+The healthcare department wants a state-wise health report to assess which state requires more attention in the 
+healthcare sector. Generate a report for them that shows the state name, number of registered people in the state, 
+number of registered patients in the state, and the people-to-patient ratio. sort the data by people-to-patient ratio. 
+
+*/
+
+
+
+select *, round(countpersons*1.0/countpatients,2) as people_to_patient_ratio
+from
+(
+	select state, count(personID) as countpersons, count(patientID) as countpatients
+	from
+	(
+			select p.personID,pa.patientID, state
+			from
+			[dbo].[Person] p
+			left join
+			[dbo].[Patient] pa
+			on p.personID = pa.patientID
+			join 
+			[dbo].[Address] a
+			on p.addressID = a.addressID
+		) as s
+
+	group by state
+	) as p
+
+
+
+/*
+Problem Statement 3.5:  
+Jhonny, from the finance department of Arizona(AZ), has requested a report that lists the total 
+quantity of medicine each pharmacy in his state has prescribed that falls under 
+
+Tax criteria I for treatments that took place in 2021. Assist Jhonny in generating the report. 
+
+*/
+select state, pharmacyID, sum(quantity) as total_quantity_medicine
+from
+(
+select state,p.pharmacyID,c.medicineID, quantity
+from [dbo].[Medicine] m
+join
+[dbo].[Contain] c
+on m.medicineID = c.medicineID
+join
+[dbo].[Prescription] p
+on p.prescriptionID = c.prescriptionID
+join 
+[dbo].[Pharmacy] ph
+on p.pharmacyID = ph.pharmacyID
+join
+[dbo].[Address] a
+on ph.addressID = a.addressID
+join 
+[dbo].[Treatment] t
+on p.treatmentID = t.treatmentID
+where state = 'AZ' and taxCriteria = 'I' and year(t.date) in ('2021')
+) as s
+group by  state, pharmacyID
+order by pharmacyID
+

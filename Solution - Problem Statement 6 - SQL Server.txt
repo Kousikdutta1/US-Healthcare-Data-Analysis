@@ -1,0 +1,158 @@
+
+
+/*
+Problem Statement 6.1: 
+
+The healthcare department wants a pharmacy report on the percentage of hospital-exclusive medicine prescribed in the year 2022.
+Assist the healthcare department to view for each pharmacy, the pharmacy id, pharmacy name, total quantity of medicine 
+prescribed in 2022, total quantity of hospital-exclusive medicine prescribed by the pharmacy in 2022, and the percentage of 
+hospital-exclusive medicine to the total medicine prescribed in 2022.
+Order the result in descending order of the percentage found. 
+
+*/
+
+select *, (hospital_exclusive*1.0/total_quantity_2022)*100 percentage_hospitalexclusive_totalquant
+from
+(
+select p.pharmacyID, ph.pharmacyName,sum(quantity) as total_quantity_2022, 
+sum(case when hospitalExclusive = 'S' then quantity else 0 end) as hospital_exclusive
+from 
+[dbo].[Medicine] m
+join
+[dbo].[Contain] c
+on m.medicineID = c.medicineID
+join
+[dbo].[Prescription] p
+on	c.prescriptionID = p.prescriptionID
+join
+[dbo].[Treatment] t
+on p.treatmentID = t.treatmentID
+join
+dbo.Pharmacy ph
+on ph.pharmacyID = p.pharmacyID
+where year(t.date) in ('2022')
+group by p.pharmacyID, ph.pharmacyName
+
+) s
+order by pharmacyID
+
+/*
+
+Problem Statement 6.2:  
+
+Sarah, from the healthcare department, has noticed many people do not claim insurance for their treatment.
+She has requested a state-wise report of the percentage of treatments that took place without claiming insurance.
+Assist Sarah by creating a report as per her requirement.
+
+*/
+
+select *, (null_count*1.0/total_null_count)*100 as percentage_count
+from
+(
+select state, count(*) as total_null_count,
+count(case when claimID is null then 1 end) as null_count
+from
+(
+select treatmentID, claimID, state
+from 
+[dbo].[Treatment] t
+join
+[dbo].[Person] p
+on t.patientID = p.personID
+join
+dbo.Address a
+on p.addressID = a.addressID 
+) s
+group by state
+) p
+order by state
+
+/*
+Problem Statement 6.3:
+
+Sarah, from the healthcare department, is trying to understand if some diseases are spreading in a particular region.
+Assist Sarah by creating a report which shows for each state, the number of the most and least treated diseases by the 
+patients of that state in the year 2022. 
+
+*/
+
+with cte as
+(
+select distinct *
+from
+(
+select state,diseaseName, count(patientID) over(partition by state, diseaseName) as count_of_patient from
+(
+select diseaseName, patientID, state
+from 
+[dbo].[Treatment] t
+join
+[dbo].[Person] p
+on t.patientID = p.personID
+join
+[dbo].[Address] a
+on a.addressID = p.addressID
+join
+[dbo].[Disease] d
+on d.diseaseID = t.diseaseID
+where year(t.date) in ('2022')
+) s
+) p
+)
+
+		select distinct state, most_treated_disease, least_treated_diseases
+		from
+		(
+		select *, 
+		first_value(diseaseName) over(partition by state order by count_of_patient desc) as most_treated_disease,
+		last_value(diseaseName) over(partition by state order by count_of_patient desc rows between unbounded preceding and unbounded following) as least_treated_diseases
+		from
+		cte
+		) q
+
+
+/*
+
+Problem Statement 6.4: 
+
+Manish, from the healthcare department, wants to know how many registered people are registered as patients as well,
+in each city. Generate a report that shows each city that has 10 or more registered people belonging to it and the number
+of patients from that city as well as the percentage of the patient with respect to the registered people.
+
+*/
+select * from [dbo].[Person]
+
+select city, count(patientID) as total_patient ,
+round((count(patientID)*1.0/ count(personID)) * 100,2) as percentage_patient
+from 
+(
+select city,personID,patientID
+from 
+[dbo].[Person] pe
+left join
+[dbo].[Patient] pa
+on pe.personID = pa.patientID
+join
+[dbo].[Address] a
+on pe.addressID = a.addressID
+) p
+group by city
+having count(personID) >= 10
+order by city
+
+
+/*
+Problem Statement 6.5:  
+It is suspected by healthcare research department that the substance “ranitidine” might be causing some side effects. 
+Find the top 3 companies using the substance in their medicine so that they can be informed about it.
+*/
+
+
+select top 3 companyName,  count(medicineID) total_no_medicine
+from 
+[dbo].[Medicine]
+where substanceName like '%ranitidina%'
+group by companyName
+order by total_no_medicine desc
+
+

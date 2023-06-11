@@ -1,0 +1,190 @@
+
+
+/*
+Problem Statement 11.1:
+
+Patients are complaining that it is often difficult to find some medicines. They move from pharmacy to pharmacy
+to get the required medicine. A system is required that finds the pharmacies and their contact number that have 
+the required medicine in their inventory. So that the patients can contact the pharmacy and order the required medicine.
+Create a stored procedure that can fix the issue.
+
+*/
+select * from [dbo].[Pharmacy]
+select * from [dbo].[Keep]
+select * from [dbo].[Medicine]
+
+create procedure get_pharmac_details(@medicineid int)
+as
+begin
+		select medicineID, p.pharmacyID, p.pharmacyName, phone
+		from [dbo].[Pharmacy] p
+		join
+		[dbo].[Keep] k
+		on p.pharmacyID = k.pharmacyID
+		where medicineID = @medicineid 
+end;
+
+------
+drop procedure if exists get_pharmac_details
+-----
+exec get_pharmac_details 211
+
+
+/*
+Problem Statement 11.2:
+
+The pharmacies are trying to estimate the average cost of all the prescribed medicines per prescription, for all 
+the prescriptions they have prescribed in a particular year. Create a stored function that will return the required 
+value when the pharmacyID and year are passed to it. Test the function with multiple values.
+
+*/
+
+
+create function get_prescription_average(@pharmacyid int, @year int)
+returns table
+as
+return
+
+( select distinct  prescriptionID,pharmacyID,years, round(avg(total_price) over(partition by prescriptionID,pharmacyID, years),2) 
+	as avg_cost
+	from
+	(
+			select p.prescriptionID,p.pharmacyID, year(t.date) as years,
+			(quantity * maxPrice) as total_price
+			from 
+			[dbo].[Prescription] p
+			join
+			[dbo].[Treatment] t
+			on p.treatmentID = t.treatmentID
+			join
+			[dbo].[Contain] c
+			on c.prescriptionID = p.prescriptionID
+			join
+			[dbo].[Medicine] m
+			on c.medicineID = m.medicineID
+			) s
+	where pharmacyID = @pharmacyid and years = @year
+);
+
+------ let's check-----
+select * from get_prescription_average(7448,2022)
+
+
+
+/*
+Problem Statement 11.3:
+
+The healthcare department has requested an application that finds out the disease that was spread the most in a state 
+for a given year. So that they can use the information to compare the historical data and gain some insight.
+Create a stored function that returns the name of the disease for which the patients from a particular state had the
+most number of treatments for a particular year. Provided the name of the state and year is passed to the stored function.
+*/
+
+create function get_details_disease (@state varchar(50), @years int)
+returns table
+as
+return
+(
+	select distinct state,years, first_value(diseaseName) over(partition by state,years order by count_treatments desc) as top_disease_per_year
+	from(
+		select state,  d.diseaseName, year(t.date) as years, count(t.treatmentID) count_treatments
+		from 
+		[dbo].[Disease] d
+		join
+		[dbo].[Treatment] t
+		on t.diseaseID = d.diseaseID
+		join
+		[dbo].[Person] p
+		on t.patientID = p.personID
+		join
+		[dbo].[Address] a
+		on a.addressID = p.addressID
+		group by state, d.diseaseName, year(t.date)
+		) s
+		where state = @state and  years = @years
+---		order by state,years
+	);
+--- Note : -you can not write order by in function, views, cte , subquery, view
+
+drop function if exists get_details_disease
+----------------Let's check
+
+select * from get_details_disease('CA', 2021)
+order by state,years
+
+
+
+/*
+
+Problem Statement 11.4:
+
+The representative of the pharma union, Aubrey, has requested a system that she can use to find how many people in a
+specific city have been treated for a specific disease in a specific year.
+Create a stored function for this purpose.
+
+*/
+
+create function get_city_wise_disease()
+returns table
+as
+return
+(
+		select distinct city,diseaseName,years,count(treatmentID) over(partition by city,years,diseaseID) as counts_treat
+		from
+		(
+		select d.diseaseID, diseaseName,year(t.date) as years, city, t.treatmentID
+		from
+		[dbo].[Address] a
+		join
+		[dbo].[Person] p
+		on p.addressID = a.addressID
+		join 
+		[dbo].[Patient] pa
+		on pa.patientID = p.personID
+		join
+		[dbo].[Treatment] t
+		on t.patientID = pa.patientID
+		join
+		[dbo].[Disease] d
+		on d.diseaseID = t.diseaseID
+		) s
+);
+----------------Let's check
+select * from get_city_wise_disease()
+order by city
+
+/*
+Problem Statement 11.5:
+
+The representative of the pharma union, Aubrey, is trying to audit different aspects of the pharmacies. She has requested a 
+system that can be used to find the average balance for claims submitted by a specific insurance company in the year 2022. 
+Create a stored function that can be used in the requested application. 
+
+*/
+
+create function get_balance_details()
+returns table
+as
+return
+(
+		select distinct companyName,years, avg(balance) over(partition by companyName, years) avg_balance
+		from
+		(
+		select ic.companyName, c.claimID,balance, year(t.date) as years
+		from 
+		[dbo].[InsuranceCompany] ic
+		join
+		[dbo].[InsurancePlan] ip
+		on ip.companyID = ic.companyID
+		join
+		[dbo].[Claim] c
+		on c.uin = ip.uin
+		join
+		[dbo].[Treatment] t
+		on t.claimID = c.claimID
+		where year(t.date) = '2022'
+		) s
+	);
+
+----let's check
+select * from get_balance_details()

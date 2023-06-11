@@ -1,0 +1,366 @@
+ /*
+ Problem statement 8.1 : - 
+
+
+ query optimize : -
+
+ Query 1: 
+-- For each age(in years), how many patients have gone for treatment?
+SELECT DATEDIFF(hour, dob , GETDATE())/8766 AS age, count(*) AS numTreatments
+FROM Person
+JOIN Patient ON Patient.patientID = Person.personID
+JOIN Treatment ON Treatment.patientID = Patient.patientID
+group by DATEDIFF(hour, dob , GETDATE())/8766
+order by numTreatments desc;
+
+
+*/
+
+/*
+To enhance the given SQL query, you can consider the following improvements: --
+
+Use table aliases: As mentioned in the revised query, assigning table aliases improves query readability. 
+You can use meaningful aliases that reflect the purpose of each table in the query.
+
+Avoid function usage in the GROUP BY and ORDER BY clauses: Instead of using the DATEDIFF function directly in the 
+GROUP BY and ORDER BY clauses, it is better to calculate the age value in the select clause and then use it in the 
+GROUP BY and ORDER BY clauses. This approach avoids redundant function calls.
+
+Include a WHERE clause for performance optimization: If there is a large amount of data in the tables,
+including a WHERE clause can limit the rows to be processed and improve query performance. For example,
+you can filter the treatments based on a specific date range or other criteria.
+
+Utilize indexes: Ensure that appropriate indexes are created on the relevant columns (e.g., dob, patientID)
+to optimize data retrieval and join operations.
+
+*/
+
+SELECT
+    age,
+    COUNT(*) AS numTreatments
+FROM (
+    SELECT
+        pt.patientID,
+        FLOOR(DATEDIFF(hour,dob, GETDATE()) / 8766) AS age
+    FROM
+        Person p
+    JOIN
+        Patient pt ON pt.patientID = p.personID
+    JOIN
+        Treatment t ON t.patientID = pt.patientID
+    WHERE
+        t.Date >= '2022-01-01' -- Example: Filtering based on treatment date range
+) AS subquery
+GROUP BY
+    age
+ORDER BY
+    numTreatments DESC;
+
+/*
+Problem statement 8.2 : -
+
+ 
+-- For each city, Find the number of registered people, number of pharmacies, and number of insurance companies.
+
+drop table if exists T1;
+drop table if exists T2;
+drop table if exists T3;
+
+select Address.city, count(Pharmacy.pharmacyID) as numPharmacy
+into T1
+from Pharmacy right join Address on Pharmacy.addressID = Address.addressID
+group by city
+order by count(Pharmacy.pharmacyID) desc;
+
+select Address.city, count(InsuranceCompany.companyID) as numInsuranceCompany
+into T2
+from InsuranceCompany right join Address on InsuranceCompany.addressID = Address.addressID
+group by city
+order by count(InsuranceCompany.companyID) desc;
+
+select Address.city, count(Person.personID) as numRegisteredPeople
+into T3
+from Person right join Address on Person.addressID = Address.addressID
+group by city
+order by count(Person.personID) desc;
+
+select T1.city, T3.numRegisteredPeople, T2.numInsuranceCompany, T1.numPharmacy
+from T1, T2, T3
+where T1.city = T2.city and T2.city = T3.city
+*/
+
+SELECT
+    A.city,
+    COUNT(P.pharmacyID) AS numPharmacy,
+    COUNT(I.companyID) AS numInsuranceCompany,
+    COUNT(Pe.personID) AS numRegisteredPeople
+FROM
+    Address A
+LEFT JOIN
+    Pharmacy P ON P.addressID = A.addressID
+LEFT JOIN
+    InsuranceCompany I ON I.addressID = A.addressID
+LEFT JOIN
+    Person Pe ON Pe.addressID = A.addressID
+GROUP BY
+    A.city
+ORDER BY
+    numRegisteredPeople DESC;
+
+
+	/*
+
+ Problem statement 8.3 : - 
+
+
+-- Total quantity of medicine for each prescription prescribed by Ally Scripts
+-- If the total quantity of medicine is less than 20 tag it as "Low Quantity".
+-- If the total quantity of medicine is from 20 to 49 (both numbers including) tag it as "Medium Quantity".
+-- If the quantity is more than equal to 50 then tag it as "High quantity".
+
+select 
+C.prescriptionID, sum(quantity) as totalQuantity,
+CASE WHEN sum(quantity) < 20 THEN 'Low Quantity'
+WHEN sum(quantity) < 50 THEN 'Medium Quantity'
+ELSE 'High Quantity' END AS Tag
+
+FROM Contain C
+JOIN Prescription P 
+on P.prescriptionID = C.prescriptionID
+JOIN Pharmacy on Pharmacy.pharmacyID = P.pharmacyID
+where Pharmacy.pharmacyName = 'Ally Scripts'
+group by C.prescriptionID;
+*/
+
+--code given : - - --
+
+-- Total quantity of medicine for each prescription prescribed by Ally Scripts
+-- If the total quantity of medicine is less than 20 tag it as "Low Quantity".
+-- If the total quantity of medicine is from 20 to 49 (both numbers including) tag it as "Medium Quantity".
+-- If the quantity is more than equal to 50 then tag it as "High quantity".
+
+select 
+C.prescriptionID, sum(quantity) as totalQuantity,
+CASE WHEN sum(quantity) < 20 THEN 'Low Quantity'
+WHEN sum(quantity) < 50 THEN 'Medium Quantity'
+ELSE 'High Quantity' END AS Tag
+
+FROM Contain C
+JOIN Prescription P 
+on P.prescriptionID = C.prescriptionID
+JOIN Pharmacy on Pharmacy.pharmacyID = P.pharmacyID
+where Pharmacy.pharmacyName = 'Ally Scripts'
+group by C.prescriptionID;
+
+----optimized ------
+
+SELECT
+    C.prescriptionID,
+    SUM(C.quantity) AS totalQuantity,
+    CASE
+        WHEN SUM(C.quantity) < 20 THEN 'Low Quantity'
+        WHEN SUM(C.quantity) < 50 THEN 'Medium Quantity'
+        ELSE 'High Quantity'
+    END AS Tag
+FROM
+    Contain C
+JOIN
+    Prescription P ON P.prescriptionID = C.prescriptionID
+JOIN
+    Pharmacy Ph ON Ph.pharmacyID = P.pharmacyID
+WHERE
+    Ph.pharmacyName = 'Ally Scripts'
+GROUP BY
+    C.prescriptionID;
+
+--To optimize the provided SQL code, you can consider the following improvements:
+
+--Use table aliases: Assign meaningful aliases to tables to improve query readability and reduce the need for 
+--repetitive table names.
+
+--Utilize proper indexing: Ensure that the relevant columns (Contain.prescriptionID, Prescription.prescriptionID, 
+--Pharmacy.pharmacyID, Pharmacy.pharmacyName) are indexed appropriately to optimize data retrieval and join operations.
+
+--Consider filtering conditions: If there are specific conditions or date ranges that can be applied to limit the data, 
+--consider adding appropriate filtering conditions to improve query performance.
+
+
+
+/*
+-- The total quantity of medicine in a prescription is the sum of the quantity of all the medicines in the prescription.
+-- Select the prescriptions for which the total quantity of medicine exceeds
+-- the avg of the total quantity of medicines for all the prescriptions.
+
+drop table if exists T1;
+
+
+select Pharmacy.pharmacyID, Prescription.prescriptionID, sum(quantity) as totalQuantity
+into T1
+from Pharmacy
+join Prescription on Pharmacy.pharmacyID = Prescription.pharmacyID
+join Contain on Contain.prescriptionID = Prescription.prescriptionID
+join Medicine on Medicine.medicineID = Contain.medicineID
+join Treatment on Treatment.treatmentID = Prescription.treatmentID
+where YEAR(date) = 2022
+group by Pharmacy.pharmacyID, Prescription.prescriptionID
+order by Pharmacy.pharmacyID, Prescription.prescriptionID;
+
+
+select * from T1
+where totalQuantity > (select avg(totalQuantity) from T1);
+*/
+
+
+
+-- Problem statement 8.4 : - 
+
+
+
+-- The total quantity of medicine in a prescription is the sum of the quantity of all the medicines in the prescription.
+-- Select the prescriptions for which the total quantity of medicine exceeds
+-- the avg of the total quantity of medicines for all the prescriptions.
+
+drop table if exists T1;
+
+
+select Pharmacy.pharmacyID, Prescription.prescriptionID, sum(quantity) as totalQuantity
+into T1
+from Pharmacy
+join Prescription on Pharmacy.pharmacyID = Prescription.pharmacyID
+join Contain on Contain.prescriptionID = Prescription.prescriptionID
+join Medicine on Medicine.medicineID = Contain.medicineID
+join Treatment on Treatment.treatmentID = Prescription.treatmentID
+where YEAR(date) = 2022
+group by Pharmacy.pharmacyID, Prescription.prescriptionID
+order by Pharmacy.pharmacyID, Prescription.prescriptionID;
+
+
+select * from T1
+where totalQuantity > (select avg(totalQuantity) from T1);
+
+----------------
+
+/*
+To optimize the provided SQL queries, you can consider the following suggestions:
+
+Use proper indexing: Ensure that the join columns (Pharmacy.pharmacyID, Prescription.pharmacyID, Contain.prescriptionID,
+Medicine.medicineID, Treatment.treatmentID) and any filtering columns (Treatment.date) have appropriate indexes to improve 
+query performance.
+
+Consider using a derived table or common table expression (CTE): Instead of creating a temporary table (T1), you can use a 
+derived table or CTE to calculate the aggregated quantity. This can eliminate the need for creating and querying the temporary
+table.
+
+Use explicit JOIN syntax: Instead of using implicit joins with the JOIN keyword in the FROM clause, use explicit join syntax. 
+This improves query readability and makes the joins more explicit.
+
+Avoid unnecessary subqueries: Instead of using a subquery in the WHERE clause to calculate the average quantity, you can join the 
+derived table or CTE with itself and use conditional filtering to achieve the same result more efficiently.
+*/
+
+WITH T1 AS (
+    SELECT
+        Pharmacy.pharmacyID,
+        Prescription.prescriptionID,
+        SUM(Contain.quantity) AS totalQuantity
+    FROM
+        Pharmacy
+    JOIN
+        Prescription ON Pharmacy.pharmacyID = Prescription.pharmacyID
+    JOIN
+        Contain ON Contain.prescriptionID = Prescription.prescriptionID
+    JOIN
+        Medicine ON Medicine.medicineID = Contain.medicineID
+    JOIN
+        Treatment ON Treatment.treatmentID = Prescription.treatmentID
+    WHERE
+        YEAR(Treatment.date) = 2022
+    GROUP BY
+        Pharmacy.pharmacyID,
+        Prescription.prescriptionID
+)
+SELECT
+    T1.*
+FROM
+    T1
+JOIN
+    (SELECT AVG(totalQuantity) AS avgQuantity FROM T1) AS avgT1
+on
+    T1.totalQuantity > avgT1.avgQuantity;
+
+
+/*
+ Problem statement 8.5 : -  
+
+
+
+-- Select every disease that has 'p' in its name, and 
+-- the number of times an insurance claim was made for each of them. 
+
+SELECT Disease.diseaseName, COUNT(*) as numClaims
+FROM Disease
+JOIN Treatment ON Disease.diseaseID = Treatment.diseaseID
+JOIN Claim On Treatment.claimID = Claim.claimID
+WHERE diseaseName IN (SELECT diseaseName from Disease where diseaseName LIKE '%p%')
+GROUP BY diseaseName;
+*/
+
+--optimize the below query 
+
+-- Select every disease that has 'p' in its name, and 
+-- the number of times an insurance claim was made for each of them. 
+
+SELECT Disease.diseaseName, COUNT(*) as numClaims
+FROM Disease
+JOIN Treatment ON Disease.diseaseID = Treatment.diseaseID
+JOIN Claim On Treatment.claimID = Claim.claimID
+WHERE diseaseName IN (SELECT diseaseName from Disease where diseaseName LIKE '%p%')
+GROUP BY diseaseName;
+
+
+-----
+/*
+To optimize the given query, you can consider the following improvements:
+
+Use proper indexing: Ensure that appropriate indexes are created on the join columns (Treatment.diseaseID, 
+Claim.claimID) and the filtering column (Disease.diseaseName) to improve query performance.
+
+Avoid using a subquery for filtering: Instead of using a subquery to get disease names containing 'p', you can 
+directly include the condition in the main query's WHERE clause. This avoids the need for an additional subquery and 
+potentially improves query execution time.
+
+Consider using a case-insensitive comparison: To make the search for disease names case-insensitive, you can use a 
+case-insensitive collation or apply a case-insensitive comparison function like LOWER or UPPER on both the disease name and 
+the comparison value.
+*/
+
+SELECT
+    Disease.diseaseName,
+    COUNT(*) AS numClaims
+FROM
+    Disease
+JOIN
+    Treatment ON Disease.diseaseID = Treatment.diseaseID
+JOIN
+    Claim ON Treatment.claimID = Claim.claimID
+WHERE
+    Disease.diseaseName LIKE '%p%' COLLATE SQL_Latin1_General_CP1_CI_AI -- Use a case-insensitive collation
+GROUP BY
+    Disease.diseaseName;
+
+	/*
+In this optimized version, the query directly includes the condition for filtering disease names containing 'p' in 
+the main WHERE clause. Additionally, the COLLATE SQL_Latin1_General_CP1_CI_AI clause is added to make the comparison 
+case-insensitive. Ensure that appropriate indexes are created on the join columns (Treatment.diseaseID, Claim.claimID) 
+and the filtering column (Disease.diseaseName) for optimal performance.
+*/
+
+
+
+
+
+
+
+
+
+

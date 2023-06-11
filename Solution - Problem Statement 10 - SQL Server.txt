@@ -1,0 +1,379 @@
+
+/*
+Problem Statement 10.1:
+
+The healthcare department has requested a system to analyze the performance of insurance companies and their plan.
+For this purpose, create a stored procedure that returns the performance of different insurance plans of an insurance company.
+When passed the insurance company ID the procedure should generate and return all the insurance plan names the provided company 
+issues, the number of treatments the plan was claimed for, and the name of the disease the plan was claimed for the most. 
+The plans which are claimed more are expected to appear above the plans that are claimed less.
+
+*/
+
+
+create procedure company_plan_details(@companyid int)
+as
+begin
+
+	with cte as
+	(
+		select *, dense_rank() over(partition by companyName order by total_treatments desc) as rank_most_treated_plan,
+		dense_rank() over(partition by companyName, planName order by total_treatments desc) as most_claimed_disease
+		from
+				(
+			select ic.companyID, ic.companyName, ip.planName,d.diseaseID,d.diseaseName, count(t.treatmentID) total_treatments
+			from
+			[dbo].[InsuranceCompany] ic
+			join
+			[dbo].[InsurancePlan] ip
+			on ic.companyID = ip.companyID
+			join
+			[dbo].[Claim] c
+			on c.uin = ip.uin
+			join
+			[dbo].[Treatment] t
+			on c.claimID = t.claimID
+			join [dbo].[Disease] d
+			on d.diseaseID = t.diseaseID
+			group by ic.companyID, ic.companyName,ip.planName, d.diseaseID, d.diseaseName
+			)s
+	) 
+select distinct companyID, companyName, planName, most_claimed_disease_per_plan from
+(
+select companyID, companyName, planName, total_treatments,max(planName) maximum_name,most_claimed_disease_per_plan
+--max(planName) over(partition by companyID, companyName, planName order by total_treatments desc) as planName_top
+from(
+	select distinct companyID, companyName, planName,total_treatments, most_claimed_disease_per_plan
+	from
+		(
+		select *, 
+		first_value(diseaseName) over(partition by companyName, planName order by total_treatments desc) most_claimed_disease_per_plan
+		from cte
+		) k
+	) j
+	group by companyID, companyName, planName, total_treatments,most_claimed_disease_per_plan
+) m
+where companyID = @companyid
+end;
+
+drop procedure if exists company_plan_details
+
+
+select * from InsuranceCompany
+
+exec company_plan_details 2295
+
+
+/*
+Problem Statement 10.2:
+
+It was reported by some unverified sources that some pharmacies are more popular for certain diseases. 
+The healthcare department wants to check the validity of this report.
+Create a stored procedure that takes a disease name as a parameter and would return the top 3 pharmacies the 
+patients are preferring for the treatment of that disease in 2021 as well as for 2022.
+Check if there are common pharmacies in the top 3 list for a disease, in the years 2021 and the year 2022.
+Call the stored procedure by passing the values “Asthma” and “Psoriasis” as disease names and draw a conclusion from the result.
+
+*/
+
+
+create procedure pharmacyreport (@diseasename varchar(50))
+as
+begin
+with cte as
+	(
+	select diseaseID, diseaseName, pharmacyName, count(treatmentID) as counts_treatments, years
+	from
+			(
+		select t.treatmentID, d.diseaseID,d.diseaseName, ph.pharmacyName,
+		case
+		when year(t.date) = '2021' then 2021
+		when year(t.date) = '2022' then 2022
+		end as years
+
+		from 
+		[dbo].[Treatment] t
+		join
+		[dbo].[Disease] d
+		on t.diseaseID = d.diseaseID
+		join
+		[dbo].[Prescription] p
+		on p.treatmentID = t.treatmentID
+		join
+		[dbo].[Pharmacy] ph
+		on ph.pharmacyID = p.pharmacyID
+		where year(t.date) in ('2021','2022')
+		) as p
+   group by diseaseID, diseaseName, pharmacyName, years
+),
+
+		cte2 as(
+			select *,
+			row_number() over (partition by diseaseName,years order by counts_treatments desc) as row_rank
+			from cte)
+
+	select * from cte2
+	where row_rank<4 and diseaseName=@diseasename
+	order by diseaseName,years,counts_treatments desc
+	end
+
+exec pharmacyreport 'Asthma'
+exec pharmacyreport 'Psoriasis'
+
+
+
+/*
+Problem Statement 10.3:
+
+Jacob, as a business strategist, wants to figure out if a state is appropriate for setting up an insurance company or not.
+Write a stored procedure that finds the num_patients, num_insurance_companies, and insurance_patient_ratio, the stored 
+procedure should also find the avg_insurance_patient_ratio and if the insurance_patient_ratio of the given state is less
+than the avg_insurance_patient_ratio then it Recommendation section can have the value “Recommended” otherwise the value 
+can be “Not Recommended”.
+
+Description of the terms used:
+num_patients: number of registered patients in the given state
+num_insurance_companies:  The number of registered insurance companies in the given state
+insurance_patient_ratio: The ratio of registered patients and the number of insurance companies in the given state
+avg_insurance_patient_ratio: The average of the ratio of registered patients and the number of insurance for all the states.
+
+*/
+
+create procedure get_recommendation
+as
+with cte as
+(
+	select *, round(count_patients * 1.0 /count_companies,2) as insurance_patient_ratio
+	from
+	(
+	select state ,count(distinct companyName) count_companies, count(distinct patientID) count_patients
+	from
+	(
+			select  state ,companyName, patientID 
+			from
+			[dbo].[InsuranceCompany] ic
+			full join
+			[dbo].[Address] a
+			on ic.addressID = a.addressID
+			full join
+			[dbo].[Person] p
+			on p.addressID = a.addressID
+			full join
+			[dbo].[Patient] pa
+			on p.personID = pa.patientID
+			) s
+		group by state
+	) p
+	where count_companies > 0 
+)
+select *,
+case 
+when insurance_patient_ratio>=(select avg(insurance_patient_ratio) from cte) then 'Not Recommended'
+else 'Recommended'
+end as recommendation
+from
+cte
+order by state
+  
+
+exec get_recommendation
+
+
+/*
+Problem Statement 10.4:
+
+
+Currently, the data from every state is not in the database, The management has decided to add the data from other states and 
+cities as well. It is felt by the management that it would be helpful if the date and time were to be stored whenever new city 
+or state data is inserted.
+The management has sent a requirement to create a PlacesAdded table if it doesn’t already exist, that has four attributes.
+placeID, placeName, placeType, and timeAdded.
+Description
+placeID: This is the primary key, it should be auto-incremented starting from 1
+placeName: This is the name of the place which is added for the first time
+placeType: This is the type of place that is added for the first time. The value can either be ‘city’ or ‘state’
+timeAdded: This is the date and time when the new place is added
+
+You have been given the responsibility to create a system that satisfies the requirements of the management. Whenever some data 
+is inserted in the Address table that has a new city or state name, the PlacesAdded table should be updated with relevant data. 
+*/
+create table PlacesAdded(placeid INT,
+placename varchar(250),
+placetype varchar(250),CHECK (placetype IN ('city', 'state')),
+timeadded date)
+
+select * from PlacesAdded
+
+
+DROP TABLE IF EXISTS PlacesAdded
+
+/*
+create trigger trigger_address
+on [dbo].[Address]
+after INSERT
+AS
+BEGIN
+	IF INSERT(state) or INSERT(city)
+	begin
+		insert into PlacesAdded(placeid,
+		placename,
+		placetype,
+		timeadded)
+
+		select 
+		inserted.addressID, 
+		case
+			when update(state) then inserted.state
+			when update(city) then inserted.city
+		end, 
+		case 
+			when update(state) then 'state'
+			when update(city) then 'city'
+		end,
+		GETDATE()
+		from inserted 
+	end
+end
+
+*/
+
+CREATE TRIGGER trigger_address
+ON [dbo].[Address]
+AFTER INSERT
+AS
+BEGIN
+	INSERT INTO PlacesAdded (placeid, placename, placetype, timeadded)
+	SELECT
+		inserted.addressID,
+		inserted.state,
+		'state',
+		GETDATE()
+	FROM inserted;
+
+	INSERT INTO PlacesAdded (placeid, placename, placetype, timeadded)
+	SELECT
+		inserted.addressID,
+		inserted.city,
+		'city',
+		GETDATE()
+	FROM inserted;
+END
+
+----if needs to drop trigger ----
+drop trigger if exists trigger_address
+
+--updating some data
+insert into address
+values(21334445,'13 vinod street','ramapuram','CA',244442)
+
+--checking the trigger table
+select * from placesadded
+
+delete from  [dbo].[Address]
+where addressID = 21334445
+
+
+
+/*
+Problem Statement 10.5:
+
+Some pharmacies suspect there is some discrepancy in their inventory management. The quantity in the ‘Keep’ is updated 
+regularly and there is no record of it. They have requested to create a system that keeps track of all the transactions 
+whenever the quantity of the inventory is updated.
+You have been given the responsibility to create a system that automatically updates a Keep_Log table which has  the 
+following fields:
+id: It is a unique field that starts with 1 and increments by 1 for each new entry
+medicineID: It is the medicineID of the medicine for which the quantity is updated.
+quantity: The quantity of medicine which is to be added. If the quantity is reduced then the number can be negative.
+For example:  If in Keep the old quantity was 700 and the new quantity to be updated is 1000, then in Keep_Log the quantity 
+should be 300.
+Example 2: If in Keep the old quantity was 700 and the new quantity to be updated is 100, then in Keep_Log the quantity should 
+be -600.
+*/
+
+
+--creating trigger table
+create table update_quantity(id int identity(1,1),
+medicineid int,
+quantity int,
+added_removed varchar(255),
+dom date)
+
+
+/*
+
+DROP TABLE IF EXISTS update_quantity
+--creating trigger on the DML operation
+create trigger quantity_trigger
+on [dbo].[Keep] 
+for update
+as
+begin
+ if update(quantity)
+ begin
+	insert into update_quantity(medicineid,quantity,dom)
+	
+	select
+	inserted.medicineid,
+	inserted.quantity-deleted.quantity,
+	getdate()
+
+	from inserted 
+	join 
+	deleted
+	on inserted.medicineid=deleted.medicineid
+	where inserted.quantity<>deleted.quantity
+	end
+end
+
+*/
+
+-----------------------------------------------------------------------------------
+
+--creating trigger on the DML operation
+create trigger quantity_trigger
+on [dbo].[Keep] 
+for update
+as
+begin
+ if update(quantity)
+ begin
+     if ((select quantity from INSERTED) - (select quantity from DELETED) > 0)
+		 begin
+			 insert into update_quantity(medicineid,quantity,added_removed,dom)
+			 select
+			 INSERTED.medicineid,
+			 (select quantity from INSERTED) - ( select quantity from DELETED),
+			 'added',
+			 getdate()
+			 from INSERTED;
+		  END;
+	  ELSE
+	      begin
+			 insert into update_quantity(medicineid,quantity,added_removed,dom)
+			 select
+			 INSERTED.medicineid,
+			 (select quantity from INSERTED) - ( select quantity from DELETED),
+			 'removed',
+			 getdate()
+			 from INSERTED
+		  END
+   end
+end
+
+select * from [dbo].[Keep]
+
+--- let's update
+
+update [dbo].[Keep]
+set quantity  = 5950
+where medicineID =1111
+--again update
+update [dbo].[Keep]
+set quantity  = 5949
+where medicineID =1111
+
+-----check the trigger details
+
+select * from update_quantity
+

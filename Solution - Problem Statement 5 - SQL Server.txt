@@ -1,0 +1,236 @@
+
+/*
+
+Problem Statement 5.1: 
+Johansson is trying to prepare a report on patients who have gone through 
+treatments more than once. Help Johansson prepare a report that shows the patient's 
+name, the number of treatments they have undergone, and their age, Sort the data in a way that the 
+patients who have undergone more treatments appear on top.
+
+*/
+
+select * from 
+(
+
+select patientID, personName, count(treatmentID) countoftreatment, age
+from
+(
+select pa.patientID,personName, treatmentID, (year(getdate()) - year(dob)) as age 
+from 
+[dbo].[Person] p
+join
+[dbo].[Patient] pa
+on p.personID = pa.patientID
+join
+[dbo].[Treatment] t
+on 
+pa.patientID = t.patientID
+) s
+group by patientID, personName, age
+) as p
+where countoftreatment > 1
+order by countoftreatment desc
+
+---results 968 rows
+
+/*
+Problem Statement 5.2:  
+
+Bharat is researching the impact of gender on different diseases, He wants to analyze if a certain disease is
+more likely to infect a certain gender or not.
+Help Bharat analyze this by creating a report showing for every disease how many males and females underwent
+treatment for each in the year 2021. It would also be helpful for Bharat if the male-to-female ratio is also shown.
+
+*/
+with cte as
+(
+select diseaseID, diseaseName, 
+sum(case when gender =  'male' then 1 else 0 end) as male_count,
+sum(case when gender =  'female' then 1 else 0 end) as female_count
+from(
+select t.diseaseID, d.diseaseName, gender
+from
+[dbo].[Disease] d
+join
+[dbo].[Treatment] t
+on d.diseaseID = t.diseaseID
+join
+[dbo].[Person] p
+on p.personID = t.patientID
+where year(t.date) in ('2021')
+) s
+group by diseaseID,diseaseName
+)
+
+select *, round((male_count * 1.0/female_count),2) as male_to_female_ratio
+from cte
+order by diseaseID
+
+
+/*
+Problem Statement 5.3: 
+
+Kelly, from the Fortis Hospital management, has requested a report that shows for each disease,
+the top 3 cities that had the most number treatment for that disease.
+Generate a report for Kelly’s requirement.
+
+*/
+
+with cte as
+(
+	select *, count(treatmentID) over(partition by diseaseID, diseaseName, city) countsoftreatment
+	from
+		(
+		select city, d.diseaseID, diseaseName, treatmentID
+		from
+		[dbo].[Disease] d
+		join
+		[dbo].[Treatment] t
+		on d.diseaseID = t.diseaseID
+		join
+		[dbo].[Person] p
+		on p.personID = t.patientID
+		join
+		[dbo].[Address] a
+		on a.addressID = p.addressID
+		) s
+	)
+
+	select *
+	from
+	(
+	select diseaseID, diseaseName, city, countsoftreatment, dense_rank() over(partition by diseaseID order by countsoftreatment desc) as ranks
+	from cte
+	group by diseaseID, diseaseName, city, countsoftreatment
+
+) as k
+where ranks in (1,2,3)
+order by diseaseID
+
+/*
+Problem Statement 5.4: 
+Brooke is trying to figure out if patients with a particular disease are preferring some pharmacies over others or not,
+For this purpose, she has requested a detailed pharmacy report that shows each pharmacy name, and how many prescriptions 
+they have prescribed for each disease in 2021 and 2022, She expects the number of prescriptions prescribed in 2021 and 2022
+be displayed in two separate columns.
+
+Write a query for Brooke’s requirement.
+
+*/
+
+select * from [dbo].[Pharmacy] 
+select * from [dbo].[Prescription]
+select * from [dbo].[Treatment]
+
+---------------------
+
+with cte as
+(
+select diseaseID, pharmacyName,years, count(prescriptionID) as counts
+from
+(
+select diseaseID,pharmacyName,year(date) as years, prescriptionID
+from 
+[dbo].[Treatment] t
+join
+[dbo].[Prescription] p
+on t.treatmentID = p.treatmentID
+join
+[dbo].[Pharmacy] ph
+on ph.pharmacyID = p.pharmacyID
+where year(date) in ('2021','2022')
+) s
+GROUP BY diseaseID, pharmacyName, years
+)
+SELECT
+  diseaseID, pharmacyName, [2021] AS count_2021, [2022] AS count_2022
+FROM
+(
+  SELECT
+    diseaseID, pharmacyName, years, counts
+  FROM cte
+  
+) s
+PIVOT
+(
+  sum(counts)
+  FOR years IN ([2021], [2022])
+) piv
+order by diseaseID
+--------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+WITH cte AS (
+    SELECT
+        diseaseID,
+        pharmacyName,
+        years,
+        COUNT(prescriptionID) AS counts
+    FROM (
+        SELECT
+            diseaseID,
+            pharmacyName,
+            YEAR(date) AS years,
+            prescriptionID
+        FROM [dbo].[Treatment] t
+        JOIN [dbo].[Prescription] p ON t.treatmentID = p.treatmentID
+        JOIN [dbo].[Pharmacy] ph ON ph.pharmacyID = p.pharmacyID
+        WHERE YEAR(date) IN ('2021', '2022')
+    ) s
+    GROUP BY diseaseID, pharmacyName, years
+)
+SELECT
+    diseaseID,
+    pharmacyName,
+    sum(CASE WHEN years = '2021' THEN counts END) AS count_2021,
+    sum(CASE WHEN years = '2022' THEN counts END) AS count_2022
+FROM cte
+GROUP BY diseaseID, pharmacyName
+order by diseaseID
+
+
+
+-----------
+/*
+
+Problem Statement 5.5:  
+Walde, from Rock tower insurance, has sent a requirement for a report that presents which insurance company is 
+targeting the patients of which state the most. 
+Write a query for Walde that fulfills the requirement of Walde.
+Note: We can assume that the insurance company is targeting a region more if the patients of that region are
+claiming more insurance of that company.
+ 
+*/
+with cte as
+(
+	select companyName, state, count(claimID) as countclaim
+	from
+	(
+	select companyName, t.claimID, state
+	from 
+	[dbo].[InsuranceCompany] i
+	join
+	[dbo].[InsurancePlan] ip
+	on i.companyID = ip.companyID
+	join
+	[dbo].[Claim] c
+	on ip.uin = c.uin
+	join
+	[dbo].[Treatment]  t
+	on t.claimID = c.claimID
+	join
+	[dbo].[Person] p
+	on p.personID = t.patientID
+	join
+	[dbo].[Address] a
+	on p.addressID = a.addressID
+	) as l
+	group by companyName, state
+)
+
+select * from
+(
+select *, dense_rank() over(partition by companyName order by countclaim desc) as rank_number_of_claims
+from cte
+) h
+where rank_number_of_claims = 1
+order by countclaim desc

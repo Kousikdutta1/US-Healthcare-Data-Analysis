@@ -1,0 +1,204 @@
+
+
+/*
+
+Problem Statement 2.1: A company needs to set up 3 new pharmacies, they have come up with an idea that the pharmacy 
+can be set up in cities where the pharmacy-to-prescription ratio is the lowest and the number of prescriptions should 
+exceed 100. Assist the company to identify those cities where the pharmacy can be set up.
+
+*/
+
+
+
+
+
+
+with cte as
+(
+select prescriptionID, p.pharmacyID, city
+from 
+dbo.Pharmacy p 
+join
+dbo.Prescription pr
+on p.pharmacyID = pr.pharmacyID
+join
+[dbo].[Address] as a
+on p.addressID = a.addressID
+
+),
+
+cte2 as
+	(
+	select city,
+	pharmacyID,
+	count( distinct prescriptionID) as prescriptions
+	from cte
+	group by pharmacyID,city
+	),
+			cte3 as
+			(
+			select city, count(pharmacyID) as pharmacies, sum(prescriptions) as prescriptionss
+			from cte2
+			group by city
+			),
+						cte4 as 
+						(
+						select city, pharmacies/cast(prescriptionss as float) as ratio
+						from 
+						cte3
+						where prescriptionss > 100
+						)
+
+
+select top 3 city from cte4
+order by ratio asc
+
+
+/*
+Problem Statement 2.2: The State of Alabama (AL) is trying to manage its healthcare resources more efficiently.
+For each city in their state, they need to identify the disease for which the maximum number of patients have gone 
+for treatment. Assist the state for this purpose.
+Note: The state of Alabama is represented as AL in Address Table.
+*/
+
+
+
+with cte as
+(
+select state,city, diseaseID, diseaseName,count(personID) as personidcount
+from
+(
+select 
+state, city,p.personID, d.diseaseID, diseaseName
+from
+[dbo].[Address] as a
+join
+[dbo].[Person] as p
+on a.addressID = p.addressID
+join
+[dbo].[Treatment] as t
+on t.patientID = p.personID
+join
+[dbo].[Disease] as d
+on t.diseaseID = d.diseaseID
+where state = 'AL'
+) d
+group by city , state, diseaseID, diseaseName
+),
+ cte2 as 
+		(select *, dense_rank() over(partition by city order by personidcount desc) as rank
+		from
+		cte
+		)
+select * from cte2
+where rank = 1
+order by personidcount desc
+
+
+/*
+Problem Statement 2.3: The healthcare department needs a report about insurance plans. The report is required to include 
+the insurance plan, which was claimed the most and least for each disease.  Assist to create such a report.
+*/
+
+with cte as
+(
+select diseaseID, planName, count(planName) as countofplan
+from 
+	(
+	select 
+	diseaseID, planName
+	from 
+	[dbo].[InsurancePlan] as i
+	join
+	[dbo].[Claim] as c
+	on i.uin = c.uin
+	join
+	[dbo].[Treatment] as t
+	on c.claimID = t.claimID
+	) s
+
+group by diseaseID,planName
+)
+	
+	select distinct diseaseID, most, least
+	from
+	(
+	select *, 
+		first_value(planName) over(partition by diseaseID order by countofplan desc) as most,
+		last_value(planName) over(partition by diseaseID order by countofplan desc
+		rows between unbounded preceding and unbounded following) as least 
+	    from cte
+		) as p
+		
+/*
+
+Problem Statement 2.4: The Healthcare department wants to know which disease is most likely to infect multiple people
+in the same household. For each disease find the number of households that has more than one patient with the same disease. 
+Note: 2 people are considered to be in the same household if they have the same address. 
+*/
+
+
+
+
+with cte as
+(
+
+select diseaseID,addressID,diseaseName, count(patientID) as counts
+from
+(
+select a.addressID,t.diseaseID,d.diseaseName,patientID
+from
+[dbo].[Address] as a
+join
+[dbo].[Person] as p
+on a.addressID = p.addressID
+join
+[dbo].[Treatment] as t
+on p.personID = t.patientID
+join
+[dbo].[Disease] as d
+on t.diseaseID = d.diseaseID
+
+) s
+group by diseaseID,addressID,diseaseName
+), cte2 as
+
+		(select * from cte
+		where counts>1
+		)
+		select diseaseID,diseaseName, count(addressID) numberofhousehold from
+		cte2
+		group by diseaseID,diseaseName
+		order by numberofhousehold desc
+
+/*
+
+Problem Statement 2.5: 
+
+An Insurance company wants a state wise report of the treatments to claim ratio between 
+1st April 2021 and 31st March 2022 (days both included). Assist them to create such a report.
+
+*/
+
+
+
+select state, round(treatments*1.0/claims,2) as ratio
+from
+(
+select state, count(treatmentID) treatments,count(claimID) claims 
+from
+(
+select state, a.addressID, p.personID, t.treatmentID,t.date, t.claimID
+from 
+[dbo].[Address] a
+join
+[dbo].[Person] p
+on a.addressID = p.addressID
+join
+[dbo].[Treatment] t
+on 
+t.patientID = p.personID
+where date >='2021-04-01' and date <='2022-03-31'
+) as s
+group by state
+) p
